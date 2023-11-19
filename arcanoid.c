@@ -17,6 +17,7 @@ typedef struct
 {
     int x, y;
     int w;
+    int fireMode;
 } TRacket;
 
 typedef struct
@@ -25,7 +26,9 @@ typedef struct
     int ix, iy;
     float alpha;
     float speed;
-} TBall;
+    char type;
+    char del;
+} TBall, TObj;
 
 char lvlMap[height][width];
 char mas[height][width + 1];
@@ -36,6 +39,20 @@ int maxHitCnt = 0;
 int lvl = 1;
 BOOL run = FALSE;
 
+#define objArrSize 1000
+TObj objArr[objArrSize];
+int objArrCnt = 0;
+
+#define ot_wide 'W'
+#define ot_thin 'T'
+#define ot_fire 'F'
+#define ot_bullet '.'
+#define objUpgradeTypesRandMax 7
+char objUpgradeTypes[] = {ot_wide, ot_thin, ot_fire};
+int objUpgradeTypesCnt = sizeof(objUpgradeTypes) / sizeof(objUpgradeTypes[0]);
+
+char Obj_HitBrick(TObj ball);
+
 void moveball(float x, float y)
 {
     ball.x = x;
@@ -44,11 +61,126 @@ void moveball(float x, float y)
     ball.iy = (int)round(ball.y);
 }
 
+TObj Obj_Create(float x, float y, float a, float spd, char chr)
+{
+    return (TObj){x, y, (int)x, (int)y, a, spd, chr};
+}
+
+void Obj_Put(TObj obj)
+{
+    if (mas[obj.iy][obj.ix] == ' ')
+        mas[obj.iy][obj.ix] = obj.type;
+}
+
+void CorrectAngle(float *a)
+{
+    if (*a < 0) *a += M_PI*2;
+    if (*a > M_PI*2) *a -= M_PI*2;
+}
+
+
+
+void Obj_Move(TObj *obj)
+{
+    CorrectAngle(&obj->alpha);
+    obj->x += cos(obj->alpha) * obj->speed;
+    obj->y += sin(obj->alpha) * obj-> speed;
+    obj->ix = (int)obj->x;
+    obj->iy = (int)obj->y;
+}
+
+void Obj_WorkUpgrade(TObj *obj)
+{
+    if (mas[obj->iy][obj->ix] != c_racket) return;
+    if (obj->type == ot_wide) racket.w = min(racket.w + 1, 15), obj->del = 1;
+    if (obj->type == ot_thin) racket.w = max(racket.w - 1, 5), obj->del = 1;
+    if (obj->type == ot_fire)
+    {
+        if (racket.fireMode < 1) racket.fireMode = 1;
+        obj->del = 1;
+    }
+}
+
+void Obj_WorkBullet(TObj *obj)
+{
+    if (obj->type != ot_bullet) return;
+    if (Obj_HitBrick(*obj) || mas[obj->iy][obj->ix] == c_border)
+        obj->del = 1;
+}
+
+void Obj_Work(TObj *obj)
+{
+    Obj_Move(obj);
+    Obj_WorkUpgrade(obj);
+    Obj_WorkBullet(obj);
+}
+
+void ObjArr_Add(TObj obj)
+{
+    assert(objArrCnt + 1 < objArrSize);
+    objArr[objArrCnt] = obj;
+    objArrCnt++;
+}
+
+void ObjArr_DelPos(int pos)
+{
+    if (pos < 0 || pos >= objArrCnt) return;
+    objArr[pos] = objArr[objArrCnt - 1];
+    objArrCnt--;
+}
+
+void objArr_Work()
+{
+    int i = 0;
+    while (i < objArrCnt)
+    {
+        Obj_Work(objArr + i);
+        if (objArr[i].y < 0 || objArr[i].y > height || objArr[i].del)
+            ObjArr_DelPos(i);
+        else
+            i++;
+    }
+}
+
+void ObjArr_Clear() {objArrCnt = 0;}
+
+void ObjArr_Put()
+{
+    for (int i = 0; i < objArrCnt; i++)
+        Obj_Put(objArr[i]);
+}
+
 void initball()
 {
     moveball(2, 2);
     ball.alpha = -1;
     ball.speed = 1;
+}
+
+void Obj_ChanceCreateRandomUpgradeObject(float x, float y)
+{
+    int i = rand() % objUpgradeTypesRandMax;
+    if (i < objUpgradeTypesCnt)
+        ObjArr_Add(Obj_Create(x, y, M_PI_2, 0.2, objUpgradeTypes[i]));
+}
+
+char Obj_HitBrick(TObj ball)
+{
+    if (mas[ball.iy][ball.ix] == c_brick)
+        {
+            if (lvlMap[ball.iy][ball.ix] == c_brick)
+                Obj_ChanceCreateRandomUpgradeObject(ball.x, ball.y);
+            int brickNom = (ball.ix - 1) / brickWidth;
+            int dx = 1 + brickNom * brickWidth;
+            for (int i = 0; i < brickWidth; i++)
+            {
+                static char *c;
+                c = &lvlMap[ball.iy][i + dx];
+                if (*c == c_brick) *c = ' ';
+            }
+            return 1;
+        }
+    return 0;
 }
 
 void AutoMoveBall()
@@ -63,17 +195,8 @@ void AutoMoveBall()
         (mas[ball.iy][ball.ix] ==  c_racket))
     {
 
-        if (mas[ball.iy][ball.ix] == c_brick)
-        {
-            int brickNom = (ball.ix - 1) / brickWidth;
-            int dx = 1 + brickNom * brickWidth;
-            for (int i = 0; i < brickWidth; i++)
-            {
-                static char *c;
-                c = &lvlMap[ball.iy][i + dx];
-                if (*c == c_brick) *c = ' ';
-            }
-        }
+        Obj_HitBrick(ball);
+
         if (mas[ball.iy][ball.ix] ==  c_racket)
         {
             hitCnt++;
@@ -126,6 +249,7 @@ void initRacket()
     racket.w = 7;
     racket.x = (width - racket.w) / 2;
     racket.y = height - 1;
+    racket.fireMode = 0;
 }
 
 
@@ -136,6 +260,11 @@ void PutRacket()
     {
         mas[racket.y][i] = c_racket;
     }
+    if (racket.fireMode > 0)
+    {
+        mas[racket.y - 1][racket.x + racket.w / 2] = '|';
+    }
+
 }
 
 void lvlMapPuzzile(int lvl)
@@ -281,6 +410,11 @@ void checkWin()
             if (lvl < 3)
             {
                 lvl++;
+                initRacket();
+                ObjArr_Clear();
+                run = FALSE;
+                maxHitCnt = 0;
+                hitCnt = 0;
                 ShowPreview();
                 lvlMapInit(lvl);
             }
@@ -291,10 +425,6 @@ void checkWin()
                 Sleep(3000);
                 exit(0);
             }
-
-            run = FALSE;
-            maxHitCnt = 0;
-            hitCnt = 0;
         }
 }
 
@@ -310,16 +440,33 @@ void BallWork()
         }
 }
 
+void racket_Shout()
+{
+    if (racket.fireMode != 1) return;
+    ObjArr_Add( Obj_Create(racket.x + racket.w / 2, racket.y - 2, -M_PI_2, 0.5, ot_bullet));
+    racket.fireMode += 10;
+}
+
+void racketWork()
+{
+    if (racket.fireMode > 1)
+        racket.fireMode--;
+}
+
 int main()
 {
     initRacket();
     initball();
     lvlMapInit(lvl);
     ShowPreview();
+
+
     do
     {
 
         BallWork();
+        objArr_Work();
+        racketWork();
 
         checkFaild();
 
@@ -330,12 +477,13 @@ int main()
         lvlMapPut();
         PutRacket();
         putball();
+        ObjArr_Put();
         show();
 
         if (GetKeyState('A') < 0) moveRacket(racket.x - Rspeed);
         if (GetKeyState('D') < 0) moveRacket(racket.x + Rspeed);
         if (GetKeyState('W') < 0) run = TRUE;
-
+        if (GetKeyState(VK_SPACE) < 0) racket_Shout();
         Sleep(10);
 
     } while(GetKeyState(VK_ESCAPE) >= 0);
