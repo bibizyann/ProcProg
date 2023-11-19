@@ -347,6 +347,23 @@ void show()
         {
             printf("   max %i   ", maxHitCnt);
         }
+        if (i == 5)
+        {
+            printf("   W - Launch the ball   ");
+        }
+        if (i == 6)
+        {
+            printf("   T - Reducing racket   ");
+        }
+        if (i == 7)
+        {
+            printf("   F - Fire mode   ");
+        }
+        if (i == 8)
+        {
+            printf("   W - Racket Increase   ");
+        }
+
         if (i < height - 1)
         {
             printf("\n");
